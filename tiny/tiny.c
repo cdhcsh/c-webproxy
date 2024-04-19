@@ -86,6 +86,7 @@ void doit(int fd) {
     } else { // 동적 콘텐츠 요청
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
+            return;
         }
         serve_dynamic(fd, method, filename, cgiargs);
     }
