@@ -15,12 +15,11 @@ int main(void) {
         n2 = atoi(arg2);
     }
     method = getenv("REQUEST_METHOD");
+
 /* Make the response body */
-    sprintf(content,"QUERY_STRING=%s", buf);
-    sprintf(content, "Welcome to add.com: ");
+    sprintf(content, "%sWelcome to add.com: ",content);
     sprintf(content, "%sTHE Internet addition portal.\r\n<p>", content);
-    sprintf(content,
-            "%sThe answer is: %d + %d = %d\r\n<p>",
+    sprintf(content, "%sThe answer is: %d + %d = %d\r\n<p>",
     content, nl, n2, nl + n2);
     sprintf(content,"%sThanks for visiting!\r\n", content);
 /* Generate the HTTP response */
@@ -29,7 +28,7 @@ int main(void) {
     printf("Content-type: text/html\r\n\r\n");
     if (strcasecmp(method, "GET") == 0) {
         printf("%s", content);
-        fflush(stdout);
     }
+    fflush(stdout);
     exit(0);
 }
