@@ -29,6 +29,9 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
+  printf("== tiny start ==\n");
+  printf("%s port using\n",argv[1]);
+
   listenfd = Open_listenfd(argv[1]);
   while (1) {
     clientlen = sizeof(clientaddr);
@@ -40,4 +43,15 @@ int main(int argc, char **argv) {
     doit(connfd);   // line:netp:tiny:doit
     Close(connfd);  // line:netp:tiny:close
   }
+}
+void doit(int fd){
+    size_t n;
+    char buf[MAXLINE];
+    rio_t rio;
+
+    Rio_readinitb(&rio,fd);
+    while((n = Rio_readlineb(&rio,buf,MAXLINE)) != 0){
+        printf("server received %d bytes\n",(int)n);
+        Rio_writen(fd,buf,n);
+    }
 }

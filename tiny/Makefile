@@ -5,6 +5,8 @@ CFLAGS = -O2 -Wall -I .
 # Others systems will probably require something different.
 LIB = -lpthread
 
+run : clean tiny
+
 all: tiny cgi
 
 tiny: tiny.c csapp.o
@@ -18,5 +20,5 @@ cgi:
 
 clean:
 	rm -f *.o tiny *~
-	(cd cgi-bin; make clean)
+	#(cd cgi-bin; make clean)
 
