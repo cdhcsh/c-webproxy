@@ -14,11 +14,11 @@ void read_requesthdrs(rio_t *rp);
 
 int parse_uri(char *uri, char *filename, char *cgiargs);
 
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *method, char *filename, int filesize);
 
 void get_filetype(char *filename, char *filetype);
 
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *method, char *filename, char *cgiargs);
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
@@ -64,7 +64,7 @@ void doit(int fd) {
     sscanf(buf, "%s %s %s", method, uri, version);
     printf("Request headers\n");
     printf("%s", buf);
-    if (strcasecmp(method, "GET") != 0) {
+    if ((strcasecmp(method, "GET") != 0 && strcasecmp(method, "HEAD") != 0)) {
         clienterror(fd, method, "501", "Not implemented", "Tiny dose not implement this method");
         return;
     }
@@ -82,12 +82,12 @@ void doit(int fd) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
             return;
         }
-        serve_static(fd, filename, sbuf.st_size);
+        serve_static(fd, method, filename, sbuf.st_size);
     } else { // 동적 콘텐츠 요청
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
             clienterror(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
         }
-        serve_dynamic(fd, filename, cgiargs);
+        serve_dynamic(fd, method, filename, cgiargs);
     }
 }
 
@@ -146,7 +146,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
     }
 }
 
-void serve_static(int fd, char *filename, int filesize) {
+void serve_static(int fd, char *method, char *filename, int filesize) {
     int srcfd;
     int SIZE = 1 << 20;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
@@ -163,13 +163,17 @@ void serve_static(int fd, char *filename, int filesize) {
     printf("%s", buf);
     Rio_writen(fd, buf, strlen(buf));
 
-    /* response body 전송 */
-    srcfd = Open(filename, O_RDONLY, 0);
-    srcp = (char *) Malloc(SIZE);
-    Rio_readn(srcfd,srcp,filesize);
-    Close(srcfd);
-    Rio_writen(fd,srcp,filesize);
-    Free(srcp);
+    printf("method %s\n", method);
+
+    if (strcasecmp(method, "GET") == 0) {
+        /* response body 전송 */
+        srcfd = Open(filename, O_RDONLY, 0);
+        srcp = (char *) Malloc(SIZE);
+        Rio_readn(srcfd, srcp, filesize);
+        Close(srcfd);
+        Rio_writen(fd, srcp, filesize);
+        Free(srcp);
+    }
 }
 
 void get_filetype(char *filename, char *filetype) {
@@ -187,7 +191,7 @@ void get_filetype(char *filename, char *filetype) {
         strcpy(filetype, "text/plain");
 }
 
-void serve_dynamic(int fd, char *filename, char *cgiargs) {
+void serve_dynamic(int fd, char *method, char *filename, char *cgiargs) {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     /* HTTP response 초기 값 전송 */
@@ -197,6 +201,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs) {
     Rio_writen(fd, buf, strlen(buf));
     if (Fork() == 0) {
         setenv("QUERY_STRING", cgiargs, 1);
+        setenv("REQUEST_METHOD", method, 1);
         Dup2(fd, STDOUT_FILENO);
         Execve(filename, emptylist, environ);
     }
