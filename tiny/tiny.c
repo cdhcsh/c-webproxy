@@ -150,7 +150,6 @@ void serve_static(int fd, char *method, char *filename, int filesize) {
     int srcfd;
     int SIZE = 1 << 20;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
-    char *fio;
 
     /* response 헤더 생성 및 전송 */
     get_filetype(filename, filetype);
