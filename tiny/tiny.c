@@ -115,7 +115,7 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
     sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
 
     /* HTTP response 전송 */
-    sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+    sprintf(buf, "HTTP/1.1 %s %s\r\n", errnum, shortmsg);
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Content-type : text/html\r\n");
     Rio_writen(fd, buf, strlen(buf));
@@ -148,12 +148,11 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 
 void serve_static(int fd, char *method, char *filename, int filesize) {
     int srcfd;
-    int SIZE = 1 << 20;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
     /* response 헤더 생성 및 전송 */
     get_filetype(filename, filetype);
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
+    sprintf(buf, "HTTP/1.1 200 OK\r\n");
     sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
     sprintf(buf, "%sConnection: close\r\n", buf);
     sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
@@ -166,7 +165,7 @@ void serve_static(int fd, char *method, char *filename, int filesize) {
     if (strcasecmp(method, "GET") == 0) {
         /* response body 전송 */
         srcfd = Open(filename, O_RDONLY, 0);
-        srcp = (char *) Malloc(SIZE);
+        srcp = (char *) Malloc(filesize);
         Rio_readn(srcfd, srcp, filesize);
         Close(srcfd);
         Rio_writen(fd, srcp, filesize);
@@ -193,7 +192,7 @@ void serve_dynamic(int fd, char *method, char *filename, char *cgiargs) {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     /* HTTP response 초기 값 전송 */
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
+    sprintf(buf, "HTTP/1.1 200 OK\r\n");
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Server: Tiny Web Server\r\n");
     Rio_writen(fd, buf, strlen(buf));
