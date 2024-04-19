@@ -163,7 +163,6 @@ void serve_static(int fd, char *method, char *filename, int filesize) {
     printf("%s", buf);
     Rio_writen(fd, buf, strlen(buf));
 
-    printf("method %s\n", method);
 
     if (strcasecmp(method, "GET") == 0) {
         /* response body 전송 */
