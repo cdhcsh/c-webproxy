@@ -148,7 +148,9 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 
 void serve_static(int fd, char *filename, int filesize) {
     int srcfd;
+    int SIZE = 1 << 15;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
+    char *fio;
 
     /* response 헤더 생성 및 전송 */
     get_filetype(filename, filetype);
@@ -157,42 +159,55 @@ void serve_static(int fd, char *filename, int filesize) {
     sprintf(buf, "%sConnection: close\r\n", buf);
     sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
     sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
-    printf("Response headers: \n");
+    printf("- Response headers: \n");
     printf("%s", buf);
     Rio_writen(fd, buf, strlen(buf));
 
     /* response body 전송 */
     srcfd = Open(filename, O_RDONLY, 0);
-    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
+    srcp = (char *) Malloc(SIZE);
+    printf("- file size\n");
+    int remain_size = filesize;
+    printf("%d\n", remain_size);
+    Rio_readinitb(&fio,srcfd);
+
+    while (remain_size > 0) {
+        int tmp = (remain_size - SIZE) >= 0 ? SIZE : remain_size;
+        Rio_readnb(&fio, srcp, tmp);
+        Rio_writen(fd, srcp, tmp);
+        remain_size -= tmp;
+    }
     Close(srcfd);
-    Rio_writen(fd, srcp, filesize);
-    Munmap(srcp, filesize);
+    Free(srcp);
 }
 
 void get_filetype(char *filename, char *filetype) {
     if (strstr(filename, ".html"))
         strcpy(filetype, "text/html");
-    else if (*strstr(filename, ".gif"))
+    else if (strstr(filename, ".gif"))
         strcpy(filetype, "image/gif");
-    else if (*strstr(filename, ".png"))
+    else if (strstr(filename, ".png"))
         strcpy(filetype, "image/png");
-    else if (*strstr(filename, ".jpg"))
+    else if (strstr(filename, ".jpg"))
         strcpy(filetype, "image/jpeg");
+    else if (strstr(filename, ".mp4"))
+        strcpy(filetype, "video/mp4");
     else
         strcpy(filetype, "text/plain");
 }
-void serve_dynamic(int fd, char *filename, char *cgiargs){
+
+void serve_dynamic(int fd, char *filename, char *cgiargs) {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     /* HTTP response 초기 값 전송 */
-    sprintf(buf,"HTTP/1.0 200 OK\r\n");
+    sprintf(buf, "HTTP/1.0 200 OK\r\n");
     Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf,"Server: Tiny Web Server\r\n");
+    sprintf(buf, "Server: Tiny Web Server\r\n");
     Rio_writen(fd, buf, strlen(buf));
-    if (Fork() == 0){
-        setenv("QUERY_STRING",cgiargs,1);
-        Dup2(fd,STDOUT_FILENO);
-        Execve(filename,emptylist,environ);
+    if (Fork() == 0) {
+        setenv("QUERY_STRING", cgiargs, 1);
+        Dup2(fd, STDOUT_FILENO);
+        Execve(filename, emptylist, environ);
     }
     wait(NULL);
 }
