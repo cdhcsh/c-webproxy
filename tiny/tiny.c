@@ -148,7 +148,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs) {
 
 void serve_static(int fd, char *filename, int filesize) {
     int srcfd;
-    int SIZE = 1 << 15;
+    int SIZE = 1 << 20;
     char *srcp, filetype[MAXLINE], buf[MAXBUF];
     char *fio;
 
@@ -166,18 +166,9 @@ void serve_static(int fd, char *filename, int filesize) {
     /* response body 전송 */
     srcfd = Open(filename, O_RDONLY, 0);
     srcp = (char *) Malloc(SIZE);
-    printf("- file size\n");
-    int remain_size = filesize;
-    printf("%d\n", remain_size);
-    Rio_readinitb(&fio,srcfd);
-
-    while (remain_size > 0) {
-        int tmp = (remain_size - SIZE) >= 0 ? SIZE : remain_size;
-        Rio_readnb(&fio, srcp, tmp);
-        Rio_writen(fd, srcp, tmp);
-        remain_size -= tmp;
-    }
+    Rio_readn(srcfd,srcp,filesize);
     Close(srcfd);
+    Rio_writen(fd,srcp,filesize);
     Free(srcp);
 }
 
