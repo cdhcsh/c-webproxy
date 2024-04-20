@@ -10,6 +10,9 @@ LDFLAGS = -lpthread
 
 all: proxy
 
+tiny:
+	(cd tiny; make tiny)
+
 csapp.o: csapp.c csapp.h
 	$(CC) $(CFLAGS) -c csapp.c
 

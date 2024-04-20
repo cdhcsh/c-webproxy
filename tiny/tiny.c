@@ -35,9 +35,6 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    printf("== tiny start ==\n");
-    printf("%s port using\n", argv[1]);
-
     listenfd = Open_listenfd(argv[1]);
     while (1) {
         clientlen = sizeof(clientaddr);
@@ -153,7 +150,7 @@ void serve_static(int fd, char *method, char *filename, int filesize) {
 
     /* response 헤더 생성 및 전송 */
     get_filetype(filename, filetype);
-    sprintf(buf, "HTTP/1.1 200 OK\r\n");
+    sprintf(buf, "HTTP/1.0 200 OK\r\n");
     sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
     sprintf(buf, "%sConnection: close\r\n", buf);
     sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
@@ -193,7 +190,7 @@ void serve_dynamic(int fd, char *method, char *filename, char *cgiargs) {
     char buf[MAXLINE], *emptylist[] = {NULL};
 
     /* HTTP response 초기 값 전송 */
-    sprintf(buf, "HTTP/1.1 200 OK\r\n");
+    sprintf(buf, "HTTP/1.0 200 OK\r\n");
     Rio_writen(fd, buf, strlen(buf));
     sprintf(buf, "Server: Tiny Web Server\r\n");
     Rio_writen(fd, buf, strlen(buf));
