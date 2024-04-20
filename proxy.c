@@ -15,14 +15,22 @@ void read_requesthdrs(rio_t *rp, char *buf);
 
 void parse_uri(char *uri, char *host, char *port, char *ruri);
 
-void serve_static(int fd, char *method, char *filename, int filesize);
-
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
 void build_remote_requesthdrs(char *hdrs, char *method, char *host, char *port, char *ruri);
 
 int request_remote_host(char *host, char *port, char *hdrs, char *buf);
 
+void print_log(char *desc, char *text) {
+    FILE *fp = fopen("output.log", "a");
+
+    if (text[strlen(text) - 1] != '\n')
+        fprintf(fp, "%s: %s\n", desc, text);
+    else
+        fprintf(fp, "%s: %s", desc, text);
+
+    fclose(fp);
+}
 int main(int argc, char **argv) {
     int listenfd, connfd;
     char hostname[MAXLINE], port[MAXLINE];
@@ -58,22 +66,21 @@ void doit(int client_fd) {
     Rio_readinitb(&rio, client_fd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
+    if(strstr(uri,"favicon.ico") > 0) return;
     read_requesthdrs(&rio, buf);
-    printf("Client Request headers\n");
-    printf("%s", buf);
+    print_log("Client Request headers\n",buf);
+
 
     parse_uri(uri, host, port, ruri);
     build_remote_requesthdrs(hdrs, method, host, port, ruri);
 
-    printf("Remote Request headers\n");
-    printf("%s", hdrs);
+    print_log("Remote Request headers\n",hdrs);
 
     if (request_remote_host(host, port, hdrs, buf) < 0) {
         clienterror(client_fd, method, "502", "Bad Gateway", "Bad Gateway");
         return;
     }
-    printf("Remote response\n");
-    printf("%s", buf);
+    print_log("Remote response\n",buf);
     Rio_writen(client_fd, buf, MAX_OBJECT_SIZE);
 }
 
@@ -108,6 +115,7 @@ void read_requesthdrs(rio_t *rp, char *output) {
 }
 
 void parse_uri(char *uri, char *host, char *port, char *ruri) {
+
     char *p1, *p2;
     if ((p2 = strstr(uri, "http://")) > 0) {
         uri = p2 + 7;
