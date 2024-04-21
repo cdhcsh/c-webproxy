@@ -52,19 +52,19 @@ int main(int argc, char **argv) {
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
                     0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-//        int pid = Fork();
-//        if (pid < 0) {
-//            clienterror(connfd, "", "501", "Internal server error", "Internal server error");
-//        } else if (pid > 0) {
-//            printf("Forked Child process [%d]\n", pid);
-//        } else { //자식 프로세스
-//            Close(listenfd);
-//            printf("\t- run\n");
+        int pid = Fork();
+        if (pid < 0) {
+            clienterror(connfd, "", "501", "Internal server error", "Internal server error");
+        } else if (pid > 0) {
+            printf("Forked Child process [%d]\n", pid);
+        } else { //자식 프로세스
+            Close(listenfd);
+            printf("\t- run\n");
         doit(connfd);   // line:netp:tiny:doit
-//            printf("\t- exit\n");
-//            exit(0);
-//        }
-//        Close(connfd);  // line:netp:tiny:close
+            printf("\t- exit\n");
+            exit(0);
+        }
+        Close(connfd);  // line:netp:tiny:close
     }
 }
 
@@ -80,7 +80,6 @@ void doit(int cliendfd) {
     sscanf(buf, "%s %s %s", method, uri, version);
     if (strstr(uri, "favicon.ico") > 0) return;
 
-    sprintf(buf, "%s\nconnfd : %d\n\n", buf,cliendfd);
     print_log("========== Request recieve ==========\n", buf);
 
     read_requesthdrs(&rio, buf);
