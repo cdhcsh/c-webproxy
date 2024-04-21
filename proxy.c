@@ -9,7 +9,7 @@ static const char *user_agent_hdr =
         "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
         "Firefox/10.0.3\r\n";
 
-void doit(int client_fd);
+void doit(int cliendfd);
 
 void read_requesthdrs(rio_t *rp, char *buf);
 
@@ -25,12 +25,13 @@ void print_log(char *desc, char *text) {
     FILE *fp = fopen("output.log", "a");
 
     if (text[strlen(text) - 1] != '\n')
-        fprintf(fp, "%s: %s\n", desc, text);
+        fprintf(fp, "%s%s\n", desc, text);
     else
-        fprintf(fp, "%s: %s", desc, text);
+        fprintf(fp, "%s%s", desc, text);
 
     fclose(fp);
 }
+
 int main(int argc, char **argv) {
     int listenfd, connfd;
     char hostname[MAXLINE], port[MAXLINE];
@@ -51,37 +52,55 @@ int main(int argc, char **argv) {
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
                     0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
+//        int pid = Fork();
+//        if (pid < 0) {
+//            clienterror(connfd, "", "501", "Internal server error", "Internal server error");
+//        } else if (pid > 0) {
+//            printf("Forked Child process [%d]\n", pid);
+//        } else { //자식 프로세스
+//            Close(listenfd);
+//            printf("\t- run\n");
         doit(connfd);   // line:netp:tiny:doit
-        Close(connfd);  // line:netp:tiny:close
+//            printf("\t- exit\n");
+//            exit(0);
+//        }
+//        Close(connfd);  // line:netp:tiny:close
     }
 }
 
-void doit(int client_fd) {
+void doit(int cliendfd) {
     char buf[MAX_OBJECT_SIZE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
     char host[MAXLINE], port[MAXLINE], ruri[MAXLINE];
     char hdrs[MAXLINE];
     rio_t rio;
 
     /* HTTP 요청 헤더 읽기 */
-    Rio_readinitb(&rio, client_fd);
+    Rio_readinitb(&rio, cliendfd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
-    if(strstr(uri,"favicon.ico") > 0) return;
+    if (strstr(uri, "favicon.ico") > 0) return;
+
+    sprintf(buf, "%s\nconnfd : %d\n\n", buf,cliendfd);
+    print_log("========== Request recieve ==========\n", buf);
+
     read_requesthdrs(&rio, buf);
-    print_log("Client Request headers\n",buf);
+    print_log("========== Client Request headers ==========\n", buf);
 
 
     parse_uri(uri, host, port, ruri);
     build_remote_requesthdrs(hdrs, method, host, port, ruri);
 
-    print_log("Remote Request headers\n",hdrs);
+    print_log("========== Remote Request headers ==========\n", hdrs);
 
+    print_log("Send Request to Remote...\n", "");
     if (request_remote_host(host, port, hdrs, buf) < 0) {
-        clienterror(client_fd, method, "502", "Bad Gateway", "Bad Gateway");
+        print_log("Request send failed\n", "");
+        clienterror(cliendfd, method, "502", "Bad Gateway", "Bad Gateway");
         return;
     }
-    print_log("Remote response\n",buf);
-    Rio_writen(client_fd, buf, MAX_OBJECT_SIZE);
+    print_log("========== Remote response ==========\n", buf);
+    Rio_writen(cliendfd, buf, MAX_OBJECT_SIZE);
+    Close(cliendfd);
 }
 
 int request_remote_host(char *host, char *port, char *hdrs, char *buf) {
@@ -107,7 +126,11 @@ void build_remote_requesthdrs(char *hdrs, char *method, char *host, char *port, 
 void read_requesthdrs(rio_t *rp, char *output) {
     char buf[MAXLINE];
 
+    // 출력 버퍼 초기화
+    strcpy(output, "");
+
     Rio_readlineb(rp, buf, MAXLINE);
+
     while (strcmp(buf, "\r\n")) {
         Rio_readlineb(rp, buf, MAXLINE);
         strcat(output, buf);
@@ -119,18 +142,22 @@ void parse_uri(char *uri, char *host, char *port, char *ruri) {
     char *p1, *p2;
     if ((p2 = strstr(uri, "http://")) > 0) {
         uri = p2 + 7;
-    }
-    else
+    } else
         uri += 1;
     p1 = index(uri, ':');
-    *p1 = '\0';
+    if (p1 > 0)
+        *p1 = '\0';
+    else {
+        p1 = index(uri, '/');
+        if (p1 > 0) *p1 = '\0';
+    }
     strcpy(host, uri);
-    p2 = index(p1+1, '/');
-    if(p2 > 0) {
+    p2 = index(p1 + 1, '/');
+    if (p2 > 0) {
         *p2 = '\0';
         strcpy(ruri, ++p2);
     }
-    strcpy(port, p1+1);
+    strcpy(port, p1 + 1);
 }
 
 /* 에러 페이지 반환*/
