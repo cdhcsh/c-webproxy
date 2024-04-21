@@ -160,7 +160,7 @@ void read_requesthdrs(rio_t *rp, char *output) {
 
 void parse_uri(char *uri, char *host, char *port, char *path) {
     char *host_p,*port_p,*path_p;
-    host_p = strstr(uri,"://") > 0 ? uri + 3 : uri + 1;
+    host_p = strstr(uri,"://") > 0 ? (uri + 7) : (uri + 1);
     port_p = strstr(host_p,":");
     path_p = strstr(host_p, "/");
     if(path_p > 0){
@@ -173,7 +173,7 @@ void parse_uri(char *uri, char *host, char *port, char *path) {
         strcpy(port,port_p+1);
     }
     else
-        strcpy(port,"");
+        strcpy(port,"80");
     host = strcpy(host, host_p);
 }
 
