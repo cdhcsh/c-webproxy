@@ -21,7 +21,17 @@ void build_remote_requesthdrs(char *hdrs, char *method, char *host, char *port, 
 
 int request_remote_host(char *host, char *port, char *hdrs, char *buf);
 
-void print_log(char *desc, char *text) {
+const void print_log(char *desc, char *test);
+
+void proxy_service(int clientfd);
+
+void *thread_action(void *vargp);
+/* ===================================================================================
+ * ==================================== FUNCTIONS ====================================
+ * =================================================================================== */
+
+
+const void print_log(char *desc, char *text) {
     FILE *fp = fopen("output.log", "a");
 
     if (text[strlen(text) - 1] != '\n')
@@ -30,11 +40,6 @@ void print_log(char *desc, char *text) {
         fprintf(fp, "%s%s", desc, text);
 
     fclose(fp);
-}
-void sigchld_handler(int sig){
-    while(waitpid(-1,0,WNOHANG) > 0)
-        ;
-    return;
 }
 
 int main(int argc, char **argv) {
@@ -51,8 +56,6 @@ int main(int argc, char **argv) {
 
     listenfd = Open_listenfd(argv[1]);
 
-    Signal(SIGCHLD,sigchld_handler);
-
     while (1) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *) &clientaddr,
@@ -60,20 +63,22 @@ int main(int argc, char **argv) {
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
                     0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-        int pid = Fork();
-        if (pid < 0) {
-            clienterror(connfd, "", "501", "Internal server error", "Internal server error");
-        } else if (pid > 0) {
-            Close(connfd);
-            printf("Forked Child process [%d]\n", pid);
-        } else { //자식 프로세스
-            Close(listenfd);
-            printf("\t- run\n");
-            doit(connfd);   // line:netp:tiny:doit
-            printf("\t- exit\n");
-            exit(0);
-        }
+        proxy_service(connfd);
     }
+}
+void proxy_service(int clientfd){
+    pthread_t tid;
+    void *argp = (void*)malloc(sizeof(int));
+    *(int*)argp = clientfd;
+    pthread_create(&tid,NULL,thread_action,argp);
+}
+void *thread_action(void *vargp){
+    pthread_detach(pthread_self());
+    int connfd = *(int*)vargp;
+    doit(connfd);
+    free(vargp);
+    Close(connfd);
+    return NULL;
 }
 
 void doit(int cliendfd) {
@@ -108,8 +113,6 @@ void doit(int cliendfd) {
     }
     print_log("========== Remote response ==========\n", buf);
     Rio_writen(cliendfd, buf, len);
-
-    Close(cliendfd);
 }
 
 int request_remote_host(char *host, char *port, char *hdrs, char *buf) {
@@ -162,6 +165,7 @@ void parse_uri(char *uri, char *host, char *port, char *ruri) {
         if (p1 > 0) *p1 = '\0';
     }
     strcpy(host, uri);
+    if(p1 == NULL) return;
     p2 = index(p1 + 1, '/');
     if (p2 > 0) {
         *p2 = '\0';
