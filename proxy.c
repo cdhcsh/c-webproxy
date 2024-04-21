@@ -31,6 +31,11 @@ void print_log(char *desc, char *text) {
 
     fclose(fp);
 }
+void sigchld_handler(int sig){
+    while(waitpid(-1,0,WNOHANG) > 0)
+        ;
+    return;
+}
 
 int main(int argc, char **argv) {
     int listenfd, connfd;
@@ -45,6 +50,9 @@ int main(int argc, char **argv) {
     }
 
     listenfd = Open_listenfd(argv[1]);
+
+    Signal(SIGCHLD,sigchld_handler);
+
     while (1) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *) &clientaddr,
@@ -56,6 +64,7 @@ int main(int argc, char **argv) {
         if (pid < 0) {
             clienterror(connfd, "", "501", "Internal server error", "Internal server error");
         } else if (pid > 0) {
+            Close(connfd);
             printf("Forked Child process [%d]\n", pid);
         } else { //자식 프로세스
             Close(listenfd);
@@ -64,7 +73,6 @@ int main(int argc, char **argv) {
             printf("\t- exit\n");
             exit(0);
         }
-        Close(connfd);  // line:netp:tiny:close
     }
 }
 
@@ -73,6 +81,7 @@ void doit(int cliendfd) {
     char host[MAXLINE], port[MAXLINE], ruri[MAXLINE];
     char hdrs[MAXLINE];
     rio_t rio;
+    int len;
 
     /* HTTP 요청 헤더 읽기 */
     Rio_readinitb(&rio, cliendfd);
@@ -80,7 +89,7 @@ void doit(int cliendfd) {
     sscanf(buf, "%s %s %s", method, uri, version);
     if (strstr(uri, "favicon.ico") > 0) return;
 
-    print_log("========== Request recieve ==========\n", buf);
+    print_log("========== ClientRequest recieve ==========\n", buf);
 
     read_requesthdrs(&rio, buf);
     print_log("========== Client Request headers ==========\n", buf);
@@ -92,32 +101,34 @@ void doit(int cliendfd) {
     print_log("========== Remote Request headers ==========\n", hdrs);
 
     print_log("Send Request to Remote...\n", "");
-    if (request_remote_host(host, port, hdrs, buf) < 0) {
+    if ((len = request_remote_host(host, port, hdrs, buf)) < 0) {
         print_log("Request send failed\n", "");
         clienterror(cliendfd, method, "502", "Bad Gateway", "Bad Gateway");
         return;
     }
     print_log("========== Remote response ==========\n", buf);
-    Rio_writen(cliendfd, buf, MAX_OBJECT_SIZE);
+    Rio_writen(cliendfd, buf, len);
+
     Close(cliendfd);
 }
 
 int request_remote_host(char *host, char *port, char *hdrs, char *buf) {
     int remote_fd = open_clientfd(host, port);
+    int len;
     if (remote_fd < 0) {
         return -1;
     }
-    Rio_writen(remote_fd, hdrs, MAXLINE);
-    Rio_readn(remote_fd, buf, MAX_OBJECT_SIZE);
+    Rio_writen(remote_fd, hdrs, strlen(hdrs));
+    len = Rio_readn(remote_fd, buf, MAX_OBJECT_SIZE);
     Close(remote_fd);
-    return 0;
+    return len;
 }
 
 void build_remote_requesthdrs(char *hdrs, char *method, char *host, char *port, char *ruri) {
     sprintf(hdrs, "%s /%s HTTP/1.0\r\n", method, ruri);
     sprintf(hdrs, "%sHost: %s:%s\r\n", hdrs, host, port);
     sprintf(hdrs, "%sConnection: close\r\n", hdrs);
-    sprintf(hdrs, "%sProxy-Connection: close\r\n", hdrs);
+    sprintf(hdrs, "%sProxy-a: close\r\n", hdrs);
     sprintf(hdrs, "%s%s\r\n", hdrs, user_agent_hdr);
 }
 
