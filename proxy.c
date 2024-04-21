@@ -1,5 +1,5 @@
 #include "csapp.h"
-//#include "cache.h"
+#include "cache.h"
 
 
 /* Recommended max cache and object sizes */
@@ -45,6 +45,7 @@ int main(int argc, char **argv) {
     }
 
     listenfd = Open_listenfd(argv[1]);
+    cache_init();
 
     while (1) {
         clientlen = sizeof(clientaddr);
@@ -74,15 +75,16 @@ const void print_log(char *desc, char *text) {
     fclose(fp);
 }
 
-void proxy_service(int clientfd){
+void proxy_service(int clientfd) {
     pthread_t tid;
-    void *argp = (void*)malloc(sizeof(int));
-    *(int*)argp = clientfd;
-    pthread_create(&tid,NULL,thread_action,argp);
+    void *argp = (void *) malloc(sizeof(int));
+    *(int *) argp = clientfd;
+    pthread_create(&tid, NULL, thread_action, argp);
 }
-void *thread_action(void *vargp){
+
+void *thread_action(void *vargp) {
     pthread_detach(pthread_self());
-    int connfd = *(int*)vargp;
+    int connfd = *(int *) vargp;
     doit(connfd);
     free(vargp);
     Close(connfd);
@@ -94,8 +96,9 @@ void doit(int cliendfd) {
     char host[MAXLINE], port[MAXLINE], ruri[MAXLINE];
     char hdrs[MAXLINE];
     rio_t rio;
-    int len;
+    ssize_t len;
 
+    signal(SIGPIPE, SIG_IGN);  // Broken Pipe 방지
     /* HTTP 요청 헤더 읽기 */
     Rio_readinitb(&rio, cliendfd);
     Rio_readlineb(&rio, buf, MAXLINE);
@@ -113,14 +116,33 @@ void doit(int cliendfd) {
 
     print_log("========== Remote Request headers ==========\n", hdrs);
 
-    print_log("Send Request to Remote...\n", "");
-    if ((len = request_remote_host(host, port, hdrs, buf)) < 0) {
-        print_log("Request send failed\n", "");
-        clienterror(cliendfd, method, "502", "Bad Gateway", "Bad Gateway");
-        return;
+    char *cache_key,*cache_value;
+    node_t *node;
+    node = cache_get(hdrs);
+    if(node > 0){
+        print_log("Caching~\n","");
+        sprintf(port,"%d",node->value_len);
+        print_log("size: ",port);
+        print_log("value : \n", node->value);
+        Rio_writen(cliendfd, node->value, node->value_len);
     }
-    print_log("========== Remote response ==========\n", buf);
-    Rio_writen(cliendfd, buf, len);
+    else {
+        print_log("Send Request to Remote...\n", "");
+        if ((len = request_remote_host(host, port, hdrs, buf)) < 0) {
+            print_log("Request send failed\n", "");
+            clienterror(cliendfd, method, "502", "Bad Gateway", "Bad Gateway");
+            return;
+        }
+        print_log("========== Remote response ==========\n", buf);
+
+        cache_key = (char *) malloc(MAXLINE);
+        memcpy(cache_key,hdrs,MAXLINE);
+        cache_value = (char *) malloc(len);
+        memcpy(cache_value,buf,len);
+        cache_add(cache_key,cache_value,len);
+
+        Rio_writen(cliendfd, buf, len);
+    }
 }
 
 int request_remote_host(char *host, char *port, char *hdrs, char *buf) {
@@ -159,21 +181,20 @@ void read_requesthdrs(rio_t *rp, char *output) {
 }
 
 void parse_uri(char *uri, char *host, char *port, char *path) {
-    char *host_p,*port_p,*path_p;
-    host_p = strstr(uri,"://") > 0 ? (uri + 7) : (uri + 1);
-    port_p = strstr(host_p,":");
+    char *host_p, *port_p, *path_p;
+    host_p = strstr(uri, "://") > 0 ? (uri + 7) : (uri + 1);
+    port_p = strstr(host_p, ":");
     path_p = strstr(host_p, "/");
-    if(path_p > 0){
+    if (path_p > 0) {
         *path_p = '\0';
-        strcpy(path,path_p+1);
-    }
-    else strcpy(path,"/");
-    if(port_p > 0){
+        strcpy(path, path_p + 1);
+    } else
+        strcpy(path, "/");
+    if (port_p > 0) {
         *port_p = '\0';
-        strcpy(port,port_p+1);
-    }
-    else
-        strcpy(port,"80");
+        strcpy(port, port_p + 1);
+    } else
+        strcpy(port, "80");
     host = strcpy(host, host_p);
 }
 

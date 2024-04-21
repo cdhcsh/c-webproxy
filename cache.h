@@ -10,8 +10,9 @@ typedef char *data_t;
 typedef struct node_t {
     data_t key;
     data_t value;
+    size_t value_len;
     struct node_t *next;
-    struct note_t *prev;
+    struct node_t *prev;
 } node_t;
 typedef struct cache_t {
     size_t size;
@@ -21,8 +22,8 @@ typedef struct cache_t {
 
 void cache_init();
 
-data_t cache_get(data_t key);
+node_t *cache_get(data_t key);
 
-int cache_add(data_t key, data_t value);
+int cache_add(data_t key, data_t value,size_t value_len);
 
 #endif
