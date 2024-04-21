@@ -222,7 +222,7 @@ int Sigsuspend(const sigset_t *set)
 /* Private sio functions */
 
 /* $begin sioprivate */
-/* sio_reverse - Reverse a string (from K&R) */
+/* sio_reverse - Reverse a data_t (from K&R) */
 static void sio_reverse(char s[])
 {
     int c, i, j;
@@ -234,7 +234,7 @@ static void sio_reverse(char s[])
     }
 }
 
-/* sio_ltoa - Convert long to base b string (from K&R) */
+/* sio_ltoa - Convert long to base b data_t (from K&R) */
 static void sio_ltoa(long v, char s[], int b) 
 {
     int c, i = 0;
@@ -254,7 +254,7 @@ static void sio_ltoa(long v, char s[], int b)
     sio_reverse(s);
 }
 
-/* sio_strlen - Return length of string (from K&R) */
+/* sio_strlen - Return length of data_t (from K&R) */
 static size_t sio_strlen(char s[])
 {
     int i = 0;
@@ -268,7 +268,7 @@ static size_t sio_strlen(char s[])
 /* Public Sio functions */
 /* $begin siopublic */
 
-ssize_t sio_puts(char s[]) /* Put string */
+ssize_t sio_puts(char s[]) /* Put data_t */
 {
     return write(STDOUT_FILENO, s, sio_strlen(s)); //line:csapp:siostrlen
 }

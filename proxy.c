@@ -1,7 +1,8 @@
 #include "csapp.h"
+//#include "cache.h"
+
 
 /* Recommended max cache and object sizes */
-#define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
 
 /* You won't lose style points for including this long line in your code */
@@ -9,11 +10,17 @@ static const char *user_agent_hdr =
         "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
         "Firefox/10.0.3\r\n";
 
+const void print_log(char *desc, char *test);
+
+void proxy_service(int clientfd);
+
+void *thread_action(void *vargp);
+
 void doit(int cliendfd);
 
 void read_requesthdrs(rio_t *rp, char *buf);
 
-void parse_uri(char *uri, char *host, char *port, char *ruri);
+void parse_uri(char *uri, char *host, char *port, char *path);
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
@@ -21,26 +28,9 @@ void build_remote_requesthdrs(char *hdrs, char *method, char *host, char *port, 
 
 int request_remote_host(char *host, char *port, char *hdrs, char *buf);
 
-const void print_log(char *desc, char *test);
-
-void proxy_service(int clientfd);
-
-void *thread_action(void *vargp);
 /* ===================================================================================
- * ==================================== FUNCTIONS ====================================
+ * ==================================== MAIN FUNCTION ====================================
  * =================================================================================== */
-
-
-const void print_log(char *desc, char *text) {
-    FILE *fp = fopen("output.log", "a");
-
-    if (text[strlen(text) - 1] != '\n')
-        fprintf(fp, "%s%s\n", desc, text);
-    else
-        fprintf(fp, "%s%s", desc, text);
-
-    fclose(fp);
-}
 
 int main(int argc, char **argv) {
     int listenfd, connfd;
@@ -66,6 +56,24 @@ int main(int argc, char **argv) {
         proxy_service(connfd);
     }
 }
+
+
+/* ===================================================================================
+ * ==================================== FUNCTIONS ====================================
+ * =================================================================================== */
+
+
+const void print_log(char *desc, char *text) {
+    FILE *fp = fopen("output.log", "a");
+
+    if (text[strlen(text) - 1] != '\n')
+        fprintf(fp, "%s%s\n", desc, text);
+    else
+        fprintf(fp, "%s%s", desc, text);
+
+    fclose(fp);
+}
+
 void proxy_service(int clientfd){
     pthread_t tid;
     void *argp = (void*)malloc(sizeof(int));
@@ -131,7 +139,7 @@ void build_remote_requesthdrs(char *hdrs, char *method, char *host, char *port, 
     sprintf(hdrs, "%s /%s HTTP/1.0\r\n", method, ruri);
     sprintf(hdrs, "%sHost: %s:%s\r\n", hdrs, host, port);
     sprintf(hdrs, "%sConnection: close\r\n", hdrs);
-    sprintf(hdrs, "%sProxy-a: close\r\n", hdrs);
+    sprintf(hdrs, "%sProxy-Connection: close\r\n", hdrs);
     sprintf(hdrs, "%s%s\r\n", hdrs, user_agent_hdr);
 }
 
@@ -150,28 +158,23 @@ void read_requesthdrs(rio_t *rp, char *output) {
     }
 }
 
-void parse_uri(char *uri, char *host, char *port, char *ruri) {
-
-    char *p1, *p2;
-    if ((p2 = strstr(uri, "http://")) > 0) {
-        uri = p2 + 7;
-    } else
-        uri += 1;
-    p1 = index(uri, ':');
-    if (p1 > 0)
-        *p1 = '\0';
-    else {
-        p1 = index(uri, '/');
-        if (p1 > 0) *p1 = '\0';
+void parse_uri(char *uri, char *host, char *port, char *path) {
+    char *host_p,*port_p,*path_p;
+    host_p = strstr(uri,"://") > 0 ? uri + 3 : uri + 1;
+    port_p = strstr(host_p,":");
+    path_p = strstr(host_p, "/");
+    if(path_p > 0){
+        *path_p = '\0';
+        strcpy(path,path_p+1);
     }
-    strcpy(host, uri);
-    if(p1 == NULL) return;
-    p2 = index(p1 + 1, '/');
-    if (p2 > 0) {
-        *p2 = '\0';
-        strcpy(ruri, ++p2);
+    else strcpy(path,"/");
+    if(port_p > 0){
+        *port_p = '\0';
+        strcpy(port,port_p+1);
     }
-    strcpy(port, p1 + 1);
+    else
+        strcpy(port,"");
+    host = strcpy(host, host_p);
 }
 
 /* 에러 페이지 반환*/
@@ -184,7 +187,6 @@ void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longms
     sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
     sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
     sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
-
     /* HTTP response 전송 */
     sprintf(buf, "HTTP/1.1 %s %s\r\n", errnum, shortmsg);
     Rio_writen(fd, buf, strlen(buf));
