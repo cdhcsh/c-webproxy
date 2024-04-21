@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
         } else { //자식 프로세스
             Close(listenfd);
             printf("\t- run\n");
-        doit(connfd);   // line:netp:tiny:doit
+            doit(connfd);   // line:netp:tiny:doit
             printf("\t- exit\n");
             exit(0);
         }
