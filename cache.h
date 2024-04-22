@@ -20,10 +20,10 @@ typedef struct cache_t {
     node_t *rear;
 } cache_t;
 
-void cache_init();
+cache_t *new_cache();
 
-node_t *cache_get(data_t key);
+node_t *cache_get(cache_t *cache,data_t key);
 
-int cache_add(data_t key, data_t value,size_t value_len);
+int cache_add(cache_t *cache,data_t key, data_t value,size_t value_len);
 
 #endif
