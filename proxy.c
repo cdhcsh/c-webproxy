@@ -132,17 +132,14 @@ void print_log(const char *desc, const char *text) {
 /* 프록시 서비스 시작 */
 void proxy_service(int fd) {
     pthread_t tid;
-    void *argp = (void *) malloc(sizeof(int));
-    *(int *) argp = fd;
-    pthread_create(&tid, NULL, thread_action, argp);
+    pthread_create(&tid, NULL, thread_action, (void*)fd);
 }
 
 /* 쓰레드 액션 */
 void *thread_action(void *argp) {
     pthread_detach(pthread_self());
-    int fd = *(int *) argp;
+    int fd = (int ) argp;
     process(fd);
-    free(argp);
     Close(fd);
     return NULL;
 }
@@ -154,10 +151,8 @@ void process(int clientfd) {
     char hdrs[MAXLINE];
     rio_t rio;
 
-    signal(SIGPIPE, SIG_IGN);  // Broken Pipe 방지
     Rio_readinitb(&rio, clientfd); // rio 초기화
     parse_server_request_hdr(&rio, method, uri, version); // 클라이언트 요청 헤더에서 method,uri,version 분리
-    if (strstr(uri, "favicon.ico") > 0) return; // 브라우저로 접속시 예외 처리
     read_client_request_hdrs(&rio); // 클라이언트 요청 헤더 읽기
     parse_client_request_uri(uri, host, port, path); // 클라이언트 요청 uri에서 host,port,path 분리
     build_server_request_hdrs(method, host, port, path, hdrs); // 최종 서버에 요청할 헤더 생성
@@ -259,7 +254,7 @@ ssize_t request_to_server_cached(const char *host, const char *port, const char 
 #endif
 /* 최종 서버 요청 및 결과 저장*/
 ssize_t request_to_server(const char *host, const char *port, const char *hdrs, char *response) {
-    int remote_fd = Open_clientfd(host, port); // 최종 서버와 연결
+    int remote_fd = open_clientfd(host, port); // 최종 서버와 연결
     ssize_t len;
     if (remote_fd < 0) { // 연결 실패
         return -1;
