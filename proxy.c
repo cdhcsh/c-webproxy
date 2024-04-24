@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
     close(connfdp);
   #elif CONCURRENCY == 1
     /* 스레드 생성하여 클라이언트 요청 처리 */
-    Pthread_create(&tid, NULL, thread, connfdp);
+    Pthread_create(&tid, NULL, thread, (void*)connfdp);
   #endif
   }
   return 0;
