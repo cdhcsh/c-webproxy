@@ -9,7 +9,7 @@
 #define DEFAULT_PATH "/"
 #define NEW_VERSION "HTTP/1.0"
 
-#define CONCURRENCY     1 // 0: 시퀀셜, 1: 멀티스레드, 2: 캐싱
+#define CONCURRENCY     0 // 0: 시퀀셜, 1: 멀티스레드, 2: 캐싱
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
