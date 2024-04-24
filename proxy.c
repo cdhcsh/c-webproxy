@@ -214,9 +214,9 @@ void response_client(int clientfd, const char *host, const char *port, const cha
     ssize_t len;
 
 #ifdef _CACHE_
-    pthread_mutex_lock(&cache_mutax);
+//    pthread_mutex_lock(&cache_mutax);
     len = request_to_server_cached(host, port, hdrs, response);
-    pthread_mutex_unlock(&cache_mutax);
+//    pthread_mutex_unlock(&cache_mutax);
 #else
     len = request_to_server(host, port, hdrs, response); // 최종 서버에게 요청 및 결과를 buf 저장
 #endif
