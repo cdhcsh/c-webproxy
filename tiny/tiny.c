@@ -43,7 +43,7 @@ int main(int argc, char **argv) {
         Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
                     0);
         printf("Accepted connection from (%s, %s)\n", hostname, port);
-        doit(connfd);   // line:netp:tiny:doit
+        process(connfd);   // line:netp:tiny:doit
         Close(connfd);  // line:netp:tiny:close
     }
 }
@@ -56,13 +56,13 @@ void process(int fd) {
     rio_t rio;
 
     /* HTTP 요청 헤더 읽기 */
-    Rio_readinitb(&rio, clientfd);
+    Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
     printf("Request headers\n");
     printf("%s", buf);
     if ((strcasecmp(method, "GET") != 0 && strcasecmp(method, "HEAD") != 0)) {
-        clienterror(clientfd, method, "501", "Not implemented", "Tiny dose not implement this method");
+        response_error(fd, method, "501", "Not implemented", "Tiny dose not implement this method");
         return;
     }
     read_requesthdrs(&rio);
@@ -70,22 +70,22 @@ void process(int fd) {
     /* 정적 콘텐츠 확인 */
     is_static = parse_uri(uri, filename, cgiargs);
     if (stat(filename, &sbuf) < 0) {
-        clienterror(clientfd, filename, "404", "NOT found", "Tiny couldn't find this file");
+        response_error(fd, filename, "404", "NOT found", "Tiny couldn't find this file");
         return;
     }
 
     if (is_static == 1) { // 정적 콘텐츠 요청
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
-            clienterror(clientfd, filename, "403", "Forbidden", "Tiny couldn't read the file");
+            response_error(fd, filename, "403", "Forbidden", "Tiny couldn't read the file");
             return;
         }
-        serve_static(clientfd, method, filename, sbuf.st_size);
+        serve_static(fd, method, filename, sbuf.st_size);
     } else { // 동적 콘텐츠 요청
         if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
-            clienterror(clientfd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
+            response_error(fd, filename, "403", "Forbidden", "Tiny couldn't run the CGI program");
             return;
         }
-        serve_dynamic(clientfd, method, filename, cgiargs);
+        serve_dynamic(fd, method, filename, cgiargs);
     }
 }
 
