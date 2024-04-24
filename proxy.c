@@ -1,291 +1,227 @@
-/* ===================================================================================
- * ================================= DEBUG SETTINGS  =================================
- * =================================================================================== */
-
-/* 출력 기록 별도 파일에 저장 여부 */
-#define _LOG_
-
-#ifdef _LOG_
-#define LOG_FILE_NAME "output.log"
-#endif
-
-/* ===================================================================================
- * ================================== DEFINE VALUES  =================================
- * =================================================================================== */
-
+#include <stdio.h>
 #include "csapp.h"
-#include "cache.h"
 
-/* 서버로부터의 결과값 MAX */
+/* Recommended max cache and object sizes */
+#define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
-/* User-Agent 헤더 값 정의 */
+
+#define DEFAULT_PORT "80"
+#define DEFAULT_PATH "/"
+#define NEW_VERSION "HTTP/1.0"
+
+#define CONCURRENCY     1 // 0: 시퀀셜, 1: 멀티스레드, 2: 캐싱
+
+/* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
-        "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
-        "Firefox/10.0.3\r\n";
+    "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 "
+    "Firefox/10.0.3\r\n";
 
-/* ===================================================================================
- * ============================== FUNCTION PROTOTYPES ================================
- * =================================================================================== */
-
-/* 처리 내역 출력 */
-void print_log(const char *desc, const char *test);
-
-/* 프록시 서비스 시작 */
-void proxy_service(int fd);
-
-/* 쓰레드 액션 */
-void *thread_action(void *argp);
-
-/* 프록시 서비스 실행 */
-void process(int clientfd);
-
-/* 클라이언트 요청 헤더 분리 */
-void parse_server_request_hdr(rio_t *rio, char *method, char *uri, char *version);
-
-/* 클라이언트 요청 헤더 읽기 */
-void read_client_request_hdrs(rio_t *rp);
-
-/* 클라이언트 요청 uri 분리 */
-void parse_client_request_uri(char *uri, char *host, char *port, char *path);
-
-/* 최종 서버 요청 헤더 생성 */
-void build_server_request_hdrs(const char *method, const char *host, const char *port, const char *path, char *hdrs);
-
-/* 클라이언트에게 최종 서버의 처리 결과 전송 */
-void response_client(int clientfd, const char *host, const char *port, const char *hdrs);
-
-/* 최종 서버 요청 및 결과 저장 */
-ssize_t request_to_server(const char *host, const char *port, const char *hdrs, char *response);
-
-/* 에러 페이지 반환 */
-void response_error(int fd, const char *cause, const char *err_num, const char *short_msg, const char *long_msg);
-
-#ifdef _CACHE_
-/* 최종 서버 요청 및 결과 저장 (캐시 사용) */
-ssize_t request_to_server_cached(const char *host, const char *port, const char *hdrs, char *response);
+void doit(int fd);
+int parse_uri(char *uri, char *hostname, char *port, char *path);
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+void new_requesthdrs(rio_t *rio, char *buf, char *hostname,
+                      char *port, char *path, char *method);
+#if CONCURRENCY == 1
+void *thread (void *vargp);
 #endif
-
-/* ===================================================================================
- * ============================== EXTERN VARIABLES ===================================
- * =================================================================================== */
-
-#ifdef _CACHE_
-cache_t *cache; // 캐쉬 구조체 선언
-pthread_mutex_t cache_mutax; // 공유자원 잠금
-#endif
-
-/* ===================================================================================
- * =============================== MAIN FUNCTION =====================================
- * =================================================================================== */
 
 int main(int argc, char **argv) {
-    int listenfd, connfd;
-    char hostname[MAXLINE], port[MAXLINE];
-    socklen_t clientlen;
-    struct sockaddr_storage clientaddr;
+  int listenfd, connfdp;                 // 소켓 디스크립터를 저장할 변수 선언
+  char hostname[MAXLINE], port[MAXLINE];  // 호스트네임과 포트 정보를 저장할 변수 선언
+  socklen_t clientlen;                    // 클라이언트의 주소 길이를 저장할 변수 선언
+  struct sockaddr_storage clientaddr;     // 클라이언트의 소켓 주소 정보를 저장할 변수 선언
+  pthread_t tid;
 
-    /* Check command line args */
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s <port>\n", argv[0]);
-        exit(1);
-    }
+  if (argc != 2) {
+    /* 명령행 인수가 2개가 아닌 경우 사용법 출력 후 종료 */
+    fprintf(stderr, "usage: %s <port>\n", argv[0]);
+    exit(1);
+  }
 
-    listenfd = Open_listenfd(argv[1]);
+  /* 클라이언트의 연결을 수신 대기하는 소켓 생성 */
+  listenfd = Open_listenfd(argv[1]);
 
-#ifdef _CACHE_
-    cache = new_cache();
-    pthread_mutex_init(&cache_mutax, NULL);
-#endif
-    while (1) {
-        clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd, (SA *) &clientaddr,
-                        &clientlen);  // line:netp:tiny:accept
-        Getnameinfo((SA *) &clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
-                    0);
-        printf("Accepted connection from (%s, %s)\n", hostname, port);
-        proxy_service(connfd);
-    }
+  /* 클라이언트로부터의 연결을 수락하고 처리 */
+  while (1) {
+    clientlen = sizeof(clientaddr);
+
+    // connfdp = Malloc(sizeof(int));
+    connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
+    /* 클라이언트의 주소 정보를 호스트네임과 포트로 변환 */
+    Getnameinfo((SA *)&clientaddr, clientlen, hostname, 
+                MAXLINE, port, MAXLINE, 0);
+    printf("Accepted connection from (%s, %s)\n", hostname, port);
+
+  #if CONCURRENCY == 0
+    doit(connfdp);
+    close(connfdp);
+  #elif CONCURRENCY == 1
+    /* 스레드 생성하여 클라이언트 요청 처리 */
+    Pthread_create(&tid, NULL, thread, connfdp);
+  #endif
+  }
+  return 0;
 }
 
-
-/* ===================================================================================
- * ================================== FUNCTIONS ======================================
- * =================================================================================== */
-
-/* 처리 내역 출력 */
-void print_log(const char *desc, const char *text) {
-#ifdef _LOG_
-    FILE *fp = fopen(LOG_FILE_NAME, "a");
-    if (text[strlen(text) - 1] != '\n')
-        fprintf(fp, "%s%s\n", desc, text);
-    else
-        fprintf(fp, "%s%s", desc, text);
-    fclose(fp);
-#else
-    if (text[strlen(text) - 1] != '\n')
-        printf("%s%s\n", desc, text);
-    else
-        printf("%s%s", desc, text);
-#endif
-}
-
-/* 프록시 서비스 시작 */
-void proxy_service(int fd) {
-    pthread_t tid;
-    void *argp = (void *) malloc(sizeof(int));
-    *(int *) argp = fd;
-    pthread_create(&tid, NULL, thread_action, argp);
-}
-
-/* 쓰레드 액션 */
-void *thread_action(void *argp) {
-    pthread_detach(pthread_self());
-    int fd = *(int *) argp;
-    process(fd);
-    free(argp);
-    Close(fd);
-    return NULL;
-}
-
-/* 프록시 서비스 실행 */
-void process(int clientfd) {
-    char method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char host[MAXLINE], port[MAXLINE], path[MAXLINE];
-    char hdrs[MAXLINE];
-    rio_t rio;
-
-    signal(SIGPIPE, SIG_IGN);  // Broken Pipe 방지
-    Rio_readinitb(&rio, clientfd); // rio 초기화
-    parse_server_request_hdr(&rio, method, uri, version); // 클라이언트 요청 헤더에서 method,uri,version 분리
-    if (strstr(uri, "favicon.ico") > 0) return; // 브라우저로 접속시 예외 처리
-    read_client_request_hdrs(&rio); // 클라이언트 요청 헤더 읽기
-    parse_client_request_uri(uri, host, port, path); // 클라이언트 요청 uri에서 host,port,path 분리
-    build_server_request_hdrs(method, host, port, path, hdrs); // 최종 서버에 요청할 헤더 생성
-    response_client(clientfd, host, port, hdrs); // 최종 서버에 요청 및 결과를 클라이언트에 전송
-}
-
-/* 클라이언트 요청 헤더 분리*/
-void parse_server_request_hdr(rio_t *rio, char *method, char *uri, char *version) {
-    char buf[MAXLINE];
-    Rio_readlineb(rio, buf, MAXLINE);
-    sscanf(buf, "%s %s %s", method, uri, version);
-    print_log("========== ClientRequest recieve ==========\n", buf);
-}
-
-/* 클라이언트 요청 헤더 읽기 */
-void read_client_request_hdrs(rio_t *rp) {
-    char buf[MAXLINE];
-    // 저장위치 초기화
-    Rio_readlineb(rp, buf, MAXLINE);
-    print_log("========== Client Request headers ==========\n", buf);
-}
-
-/* 클라이언트 요청 uri 분리 */
-void parse_client_request_uri(char *uri, char *host, char *port, char *path) {
-    char *host_p, *port_p, *path_p;
-    host_p = strstr(uri, "://") > 0 ? (uri + 7) : (uri + 1); // Http:// 건너뛰기
-    port_p = strchr(host_p, ':');
-    path_p = strchr(host_p, '/');
-    if (path_p != NULL) { // path가 있다면
-        *path_p = '\0';
-        strcpy(path, path_p + 1); //path 저장
-    } else
-        strcpy(path, ""); // port가 있다면
-    if (port_p != NULL) {
-        *port_p = '\0';
-        strcpy(port, port_p + 1); //port 저장
-    } else
-        strcpy(port, "80"); // 기본 http 포트
-    host = strcpy(host, host_p); // hostname 저장
-}
-
-/* 최종 서버 요청 헤더 생성*/
-void build_server_request_hdrs(const char *method, const char *host,
-                               const char *port, const char *path, char *hdrs) {
-    sprintf(hdrs, "%s /%s HTTP/1.0\r\n", method, path);
-    sprintf(hdrs, "%sHost: %s:%s\r\n", hdrs, host, port);
-    sprintf(hdrs, "%sConnection: close\r\n", hdrs);
-    sprintf(hdrs, "%sProxy-Connection: close\r\n", hdrs);
-    sprintf(hdrs, "%s%s\r\n", hdrs, user_agent_hdr);
-    print_log("========== Remote Request headers ==========\n", hdrs);
-}
-
-/* 클라이언트에게 서버의 요청 결과 전송*/
-void response_client(int clientfd, const char *host, const char *port, const char *hdrs) {
-    char response[MAX_OBJECT_SIZE];
-    ssize_t len;
-
-#ifdef _CACHE_
-    pthread_mutex_lock(&cache_mutax);
-    len = request_to_server_cached(host, port, hdrs, response);
-    pthread_mutex_unlock(&cache_mutax);
-#else
-    len = request_to_server(host, port, hdrs, response); // 최종 서버에게 요청 및 결과를 buf 저장
-#endif
-    if (len > 0) {
-        Rio_writen(clientfd, response, len);
-    } else {
-        print_log("Request send failed\n", "");
-        response_error(clientfd, "GET", "502", "Bad Gateway", "Bad Gateway");
-    }
-}
-
-/* 최종 서버 요청 및 결과 저장 (캐시 사용) */
-#ifdef _CACHE_
-ssize_t request_to_server_cached(const char *host, const char *port, const char *hdrs, char *response) {
-    node_t *node;
-    char *cache_key, *cache_value;
-    ssize_t len;
-    node = cache_get(cache, hdrs);
-    if (node != NULL) { // 캐싱
-        memcpy(response, node->value, node->value_len);
-        return node->value_len;
-    } else {
-        print_log("Send Request to Remote...\n", "");
-        len = request_to_server(host, port, hdrs, response); // 최종 서버에게 요청 및 결과를 buf 저장
-        if (len < 0) { // 최종 서버 연결 실패
-            return -1;
-        }
-
-        cache_key = (char *) malloc(MAXLINE);
-        memcpy(cache_key, hdrs, MAXLINE);
-        cache_value = (char *) malloc(len);
-        memcpy(cache_value, response, len);
-        cache_add(cache, cache_key, cache_value, len); // 캐쉬 저장
-
-        return len;
-    }
+#if CONCURRENCY == 1
+void *thread (void *vargp) {
+  int connfd = (int)vargp;
+  Pthread_detach(pthread_self()); // 스레드 분리
+  // Free(vargp);                    // 동적 할당된 메모리 해제
+  doit(connfd);                   // 클라이언트 요청 처리 함수 호출
+  Close(connfd);                  // 클라이언트 소켓 닫기
+  return NULL;
 }
 #endif
-/* 최종 서버 요청 및 결과 저장*/
-ssize_t request_to_server(const char *host, const char *port, const char *hdrs, char *response) {
-    int remote_fd = Open_clientfd(host, port); // 최종 서버와 연결
-    ssize_t len;
-    if (remote_fd < 0) { // 연결 실패
-        return -1;
-    }
-    Rio_writen(remote_fd, hdrs, strlen(hdrs)); // 최종 서버에 헤더 전송
-    len = Rio_readn(remote_fd, response, MAX_OBJECT_SIZE); // 최종 서버에서 결과를 받아서 저장
-    Close(remote_fd); // 연결 닫기
-    return len; // 결과 길이 반환
+
+/* 클라이언트의 요청을 처리하는 함수 */
+void doit(int fd) {
+  int serverfd;
+  char request_buf[MAXLINE], response_buf[MAXLINE],
+      method[MAXLINE], uri[MAXLINE], version[MAXLINE],
+      server_hostname[MAXLINE], server_port[MAXLINE], server_path[MAXLINE];
+  rio_t rio;
+
+  /* 클라이언트로부터 요청 라인 및 헤더를 읽음 */
+  Rio_readinitb(&rio, fd);  // 클라이언트와의 연결을 읽기 위해 rio 구조체 초기화
+  Rio_readlineb(&rio, request_buf, MAXLINE);  // 클라이언트로부터 요청 라인 읽기
+  printf("Request header:\n");
+  printf("%s", request_buf);
+  sscanf(request_buf, "%s %s %s", method, uri, version);  // 요청 라인 파싱
+
+  /* GET / HEAD Method가 아닐 때 */
+  if (strcasecmp(method, "GET") && strcasecmp(method, "HEAD")) {
+    clienterror(fd, method, "501", "Not implemented",
+                "Tiny does not implement this method");
+    return;
+  }
+
+  if(strstr(uri, "favicon")) return;  // 파비콘 요청이 있는 경우 처리하지 않음
+
+  parse_uri(uri, server_hostname, server_port, server_path);
+  new_requesthdrs(&rio, request_buf, server_hostname, 
+                  server_port, server_path, method);
+  
+  /* 클라이언트로부터 받은 요청을 서버로 전송 */
+  serverfd = Open_clientfd(server_hostname, server_port);
+  if (serverfd < 0) {
+    clienterror(serverfd, "Connection failed", "500",
+                "Internal Server Error", "Failed to connect to server");
+    return;
+  }
+
+  /* 서버로 요청 전송 */
+  Rio_writen(serverfd, request_buf, strlen(request_buf));
+
+  /* 요청 헤더를 서버로 전송 */
+  while (strcmp(request_buf, "\r\n")) {
+    Rio_readlineb(&rio, request_buf, MAXLINE);
+    Rio_writen(serverfd, request_buf, strlen(request_buf));
+  }
+
+  /* 서버로부터 응답을 읽고 클라이언트에게 전송 */
+  while (Rio_readn(serverfd, response_buf, MAXLINE) > 0) {
+    Rio_writen(fd, response_buf, MAXLINE);
+  }
+
+  Close(serverfd);
 }
 
-/* 에러 페이지 반환*/
-void response_error(int fd, const char *cause, const char *err_num, const char *short_msg, const char *long_msg) {
-    char buf[MAXLINE], body[MAXBUF];
+/* 클라이언트에게 오류를 설명하는 HTML 문서를 전송하여 오류를 처리하는 함수 */
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg) {
+  char request_buf[MAXLINE], body[MAXBUF];
 
-    /* HTTP response body 생성 */
-    sprintf(body, "<html><title>Tiny Error</title>");
-    sprintf(body, "%s<body bgcolor=""ffffff"">\r\n", body);
-    sprintf(body, "%s%s: %s\r\n", body, err_num, short_msg);
-    sprintf(body, "%s<p>%s: %s\r\n", body, long_msg, cause);
-    sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
-    /* HTTP response 전송 */
-    sprintf(buf, "HTTP/1.1 %s %s\r\n", err_num, short_msg);
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Content-type : text/html\r\n");
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "content-length: %d\r\n\r\n", (int) strlen(body));
-    Rio_writen(fd, buf, strlen(buf));
-    Rio_writen(fd, body, strlen(body));
+  /* Build the HTTP response body */
+  sprintf(body, "<html><title>Tiny Error</title>");
+  sprintf(body, "%s<body bgcolor=""ffffff"">\r\n", body);
+  sprintf(body, "%s%s: %s\r\n", body, errnum, shortmsg);
+  sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
+  sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
+
+  /* Print the HTTP response */
+  sprintf(request_buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+  Rio_writen(fd, request_buf, strlen(request_buf));
+  sprintf(request_buf, "Content-type: text/html\r\n");
+  Rio_writen(fd, request_buf, strlen(request_buf));
+  sprintf(request_buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
+  Rio_writen(fd, request_buf, strlen(request_buf));
+  Rio_writen(fd, body, strlen(body));
+}
+
+int parse_uri(char *uri, char *hostname, char *port, char *path) {
+  char *ptr = uri;
+
+  /* URI에서 시작 위치 설정 */
+  ptr = strstr(ptr, "://");
+  ptr = ptr ? ptr + 3 : uri;
+  if (ptr[0] == '/') ptr += 1;
+
+  /* Hostname 추출 */
+  strcpy(hostname, ptr);
+
+  /* Path 추출 */
+  if((ptr = strchr(hostname, '/'))){  
+    *ptr = '\0';                // host = www.google.com:80
+    ptr += 1;
+    strcpy(path, DEFAULT_PATH); // uri_ptos = /
+    strcat(path, ptr);          // uri_ptos = /index.html
+  } else {
+    strcpy(path, DEFAULT_PATH);
+  }
+
+  /* Port Number 추출 */
+  if ((ptr = strchr(hostname, ':'))){ // host = www.google.com:80
+    *ptr = '\0';                      // host = www.google.com
+    ptr += 1;     
+    strcpy(port, ptr);                // port = 80
+  } else {
+    strcpy(port, DEFAULT_PORT);       // port가 없을 경우 "80"을 넣어줌
+  }
+
+  // printf("Host: %s\n", hostname);
+  // printf("Port: %s\n", port);
+  // printf("Path: %s\n", path);
+
+  return 0; // 성공
+}
+/* 새로운 요청 헤더를 생성하는 함수 */
+void new_requesthdrs(rio_t *rio, char *buf, char *hostname, char *port,
+                      char *path, char *method) {
+  sprintf(buf, "%s %s %s\r\n", method, path, NEW_VERSION);
+  sprintf(buf, "%sHost: %s\r\n", buf, hostname);          // Host: www.google.com     
+  sprintf(buf, "%s%s", buf, user_agent_hdr);              // User-Agent: ~(bla bla)
+  sprintf(buf, "%sConnections: close\r\n", buf);          // Connections: close
+  sprintf(buf, "%sProxy-Connection: close\r\n\r\n", buf); // Proxy-Connection: close
+
+  // char host_header[MAXLINE], other_header[MAXLINE];
+  // strcpy(host_header, "\0");
+  
+  
+  // /*check host header and get other request header for client rio then change it */
+  // while(Rio_readlineb(rio, buf, MAXLINE) >0){
+  //   if(strcmp(buf, "\r\n")==0) break; //EOF
+  //   if(strncasecmp("Host:", buf, strlen("Host:"))){
+  //     strcpy(host_header, buf);
+  //     continue;
+  //   }
+  //   //when this line is not  proxy_connection header or connection header or user-agent:
+  //   if( !strncasecmp("Connection:", buf, strlen("Connection:")) 
+  //     && !strncasecmp("Proxy-Connection:", buf, strlen("Proxy-Connection:"))
+  //     && !strncasecmp("User-Agent:", buf, strlen("User-Agent:")) )
+  //   {
+  //     strcat(other_header, buf);
+  //   }
+  // }
+  // if(strlen(host_header) == 0){
+  //   sprintf(host_header, "Host: %s：%s\r\n", hostname, port);
+  // }
+  // strcat(buf, host_header);
+  // strcat(buf, user_agent_hdr);
+  // strcat(buf, other_header);
+  // strcat(buf, "Connection: close\r\n");
+  // strcat(buf, "Proxy-Connection: close\r\n");
+  // strcat(buf, "\r\n");
+
+  
+  // printf("%s\n", buf);
 }
