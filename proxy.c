@@ -61,8 +61,10 @@ ssize_t request_to_server(const char *host, const char *port, const char *hdrs, 
 void response_error(int fd, const char *cause, const char *err_num, const char *short_msg, const char *long_msg);
 
 #ifdef _CACHE_
+
 /* 최종 서버 요청 및 결과 저장 (캐시 사용) */
 ssize_t request_to_server_cached(const char *host, const char *port, const char *hdrs, char *response);
+
 #endif
 
 /* ===================================================================================
@@ -214,9 +216,7 @@ void response_client(int clientfd, const char *host, const char *port, const cha
     ssize_t len;
 
 #ifdef _CACHE_
-//    pthread_mutex_lock(&cache_mutax);
     len = request_to_server_cached(host, port, hdrs, response);
-//    pthread_mutex_unlock(&cache_mutax);
 #else
     len = request_to_server(host, port, hdrs, response); // 최종 서버에게 요청 및 결과를 buf 저장
 #endif
@@ -230,11 +230,14 @@ void response_client(int clientfd, const char *host, const char *port, const cha
 
 /* 최종 서버 요청 및 결과 저장 (캐시 사용) */
 #ifdef _CACHE_
+
 ssize_t request_to_server_cached(const char *host, const char *port, const char *hdrs, char *response) {
     node_t *node;
     char *cache_key, *cache_value;
     ssize_t len;
+    pthread_mutex_lock(&cache_mutax);
     node = cache_get(cache, hdrs);
+    pthread_mutex_unlock(&cache_mutax);
     if (node != NULL) { // 캐싱
         memcpy(response, node->value, node->value_len);
         return node->value_len;
@@ -249,12 +252,16 @@ ssize_t request_to_server_cached(const char *host, const char *port, const char 
         memcpy(cache_key, hdrs, MAXLINE);
         cache_value = (char *) malloc(len);
         memcpy(cache_value, response, len);
+        pthread_mutex_lock(&cache_mutax);
         cache_add(cache, cache_key, cache_value, len); // 캐쉬 저장
+        pthread_mutex_unlock(&cache_mutax);
 
         return len;
     }
 }
+
 #endif
+
 /* 최종 서버 요청 및 결과 저장*/
 ssize_t request_to_server(const char *host, const char *port, const char *hdrs, char *response) {
     int remote_fd = open_clientfd(host, port); // 최종 서버와 연결
