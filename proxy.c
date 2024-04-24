@@ -132,14 +132,17 @@ void print_log(const char *desc, const char *text) {
 /* 프록시 서비스 시작 */
 void proxy_service(int fd) {
     pthread_t tid;
-    pthread_create(&tid, NULL, thread_action, (void*)fd);
+    void *argp = (void *) malloc(sizeof(int));
+    *(int *) argp = fd;
+    pthread_create(&tid, NULL, thread_action, argp);
 }
 
 /* 쓰레드 액션 */
 void *thread_action(void *argp) {
     pthread_detach(pthread_self());
-    int fd = (int ) argp;
+    int fd = *(int *) argp;
     process(fd);
+    free(argp);
     Close(fd);
     return NULL;
 }
