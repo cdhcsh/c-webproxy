@@ -40,22 +40,19 @@ void *thread_action(void *argp);
 void process(int clientfd);
 
 /* 클라이언트 요청 헤더 분리 */
-void parse_request_hdr(rio_t *rio, char *method, char *uri, char *version);
+void parse_server_request_hdr(rio_t *rio, char *method, char *uri, char *version);
 
 /* 클라이언트 요청 헤더 읽기 */
-void read_request_hdrs(rio_t *rp);
+void read_client_request_hdrs(rio_t *rp);
 
 /* 클라이언트 요청 uri 분리 */
-void parse_request_uri(char *uri, char *host, char *port, char *path);
+void parse_client_request_uri(char *uri, char *host, char *port, char *path);
 
 /* 최종 서버 요청 헤더 생성 */
 void build_server_request_hdrs(const char *method, const char *host, const char *port, const char *path, char *hdrs);
 
 /* 클라이언트에게 최종 서버의 처리 결과 전송 */
-void response_to_client(int clientfd, const char *host, const char *port, const char *hdrs);
-
-/* 최종 서버 결과 반환 */
-ssize_t get_response_from_server(const char *host, const char *port, const char *hdrs, char *response);
+void response_client(int clientfd, const char *host, const char *port, const char *hdrs);
 
 /* 최종 서버 요청 및 결과 저장 */
 ssize_t request_to_server(const char *host, const char *port, const char *hdrs, char *response);
@@ -63,12 +60,19 @@ ssize_t request_to_server(const char *host, const char *port, const char *hdrs, 
 /* 에러 페이지 반환 */
 void response_error(int fd, const char *cause, const char *err_num, const char *short_msg, const char *long_msg);
 
+#ifdef _CACHE_
+/* 최종 서버 요청 및 결과 저장 (캐시 사용) */
+ssize_t request_to_server_cached(const char *host, const char *port, const char *hdrs, char *response);
+#endif
+
 /* ===================================================================================
  * ============================== EXTERN VARIABLES ===================================
  * =================================================================================== */
 
+#ifdef _CACHE_
 cache_t *cache; // 캐쉬 구조체 선언
 pthread_mutex_t cache_mutax; // 공유자원 잠금
+#endif
 
 /* ===================================================================================
  * =============================== MAIN FUNCTION =====================================
@@ -87,8 +91,11 @@ int main(int argc, char **argv) {
     }
 
     listenfd = Open_listenfd(argv[1]);
+
+#ifdef _CACHE_
     cache = new_cache();
     pthread_mutex_init(&cache_mutax, NULL);
+#endif
     while (1) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *) &clientaddr,
@@ -142,7 +149,6 @@ void *thread_action(void *argp) {
 
 /* 프록시 서비스 실행 */
 void process(int clientfd) {
-    char buf[MAXLINE];
     char method[MAXLINE], uri[MAXLINE], version[MAXLINE];
     char host[MAXLINE], port[MAXLINE], path[MAXLINE];
     char hdrs[MAXLINE];
@@ -150,16 +156,16 @@ void process(int clientfd) {
 
     signal(SIGPIPE, SIG_IGN);  // Broken Pipe 방지
     Rio_readinitb(&rio, clientfd); // rio 초기화
-    parse_request_hdr(&rio, method, uri, version); // 클라이언트 요청 헤더에서 method,uri,version 분리
+    parse_server_request_hdr(&rio, method, uri, version); // 클라이언트 요청 헤더에서 method,uri,version 분리
     if (strstr(uri, "favicon.ico") > 0) return; // 브라우저로 접속시 예외 처리
-    read_request_hdrs(&rio); // 클라이언트 요청 헤더 읽기
-    parse_request_uri(uri, host, port, path); // 클라이언트 요청 uri에서 host,port,path 분리
+    read_client_request_hdrs(&rio); // 클라이언트 요청 헤더 읽기
+    parse_client_request_uri(uri, host, port, path); // 클라이언트 요청 uri에서 host,port,path 분리
     build_server_request_hdrs(method, host, port, path, hdrs); // 최종 서버에 요청할 헤더 생성
-    response_to_client(clientfd, host, port, hdrs); // 최종 서버에 요청 및 결과를 클라이언트에 전송
+    response_client(clientfd, host, port, hdrs); // 최종 서버에 요청 및 결과를 클라이언트에 전송
 }
 
 /* 클라이언트 요청 헤더 분리*/
-void parse_request_hdr(rio_t *rio, char *method, char *uri, char *version) {
+void parse_server_request_hdr(rio_t *rio, char *method, char *uri, char *version) {
     char buf[MAXLINE];
     Rio_readlineb(rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
@@ -167,7 +173,7 @@ void parse_request_hdr(rio_t *rio, char *method, char *uri, char *version) {
 }
 
 /* 클라이언트 요청 헤더 읽기 */
-void read_request_hdrs(rio_t *rp) {
+void read_client_request_hdrs(rio_t *rp) {
     char buf[MAXLINE];
     // 저장위치 초기화
     Rio_readlineb(rp, buf, MAXLINE);
@@ -175,7 +181,7 @@ void read_request_hdrs(rio_t *rp) {
 }
 
 /* 클라이언트 요청 uri 분리 */
-void parse_request_uri(char *uri, char *host, char *port, char *path) {
+void parse_client_request_uri(char *uri, char *host, char *port, char *path) {
     char *host_p, *port_p, *path_p;
     host_p = strstr(uri, "://") > 0 ? (uri + 7) : (uri + 1); // Http:// 건너뛰기
     port_p = strchr(host_p, ':');
@@ -205,21 +211,28 @@ void build_server_request_hdrs(const char *method, const char *host,
 }
 
 /* 클라이언트에게 서버의 요청 결과 전송*/
-void response_to_client(int clientfd, const char *host, const char *port, const char *hdrs) {
+void response_client(int clientfd, const char *host, const char *port, const char *hdrs) {
     char response[MAX_OBJECT_SIZE];
     ssize_t len;
+
+#ifdef _CACHE_
     pthread_mutex_lock(&cache_mutax);
-    if ((len = get_response_from_server(host, port, hdrs, response)) > 0) {
+    len = request_to_server_cached(host, port, hdrs, response);
+    pthread_mutex_unlock(&cache_mutax);
+#else
+    len = request_to_server(host, port, hdrs, response); // 최종 서버에게 요청 및 결과를 buf 저장
+#endif
+    if (len > 0) {
         Rio_writen(clientfd, response, len);
     } else {
         print_log("Request send failed\n", "");
         response_error(clientfd, "GET", "502", "Bad Gateway", "Bad Gateway");
     }
-    pthread_mutex_unlock(&cache_mutax);
 }
 
-/* 최종 서버 결과 반환*/
-ssize_t get_response_from_server(const char *host, const char *port, const char *hdrs, char *response) {
+/* 최종 서버 요청 및 결과 저장 (캐시 사용) */
+#ifdef _CACHE_
+ssize_t request_to_server_cached(const char *host, const char *port, const char *hdrs, char *response) {
     node_t *node;
     char *cache_key, *cache_value;
     ssize_t len;
@@ -243,7 +256,7 @@ ssize_t get_response_from_server(const char *host, const char *port, const char 
         return len;
     }
 }
-
+#endif
 /* 최종 서버 요청 및 결과 저장*/
 ssize_t request_to_server(const char *host, const char *port, const char *hdrs, char *response) {
     int remote_fd = Open_clientfd(host, port); // 최종 서버와 연결

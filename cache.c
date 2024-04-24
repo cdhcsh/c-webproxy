@@ -1,6 +1,8 @@
 #include "cache.h"
 
-/* function prototypes */
+/* ===================================================================================
+ * ============================== FUNCTION PROTOTYPES  ===============================
+ * =================================================================================== */
 
 /* 노드를 연결리스트에서 제거*/
 static void _cache_pop(cache_t *cache,node_t *node);
@@ -11,7 +13,9 @@ static void _cache_move_front(cache_t *cache,node_t *node);
 /* 노드 메모리 반환*/
 static void _node_delete(node_t *node);
 
-/* main functions*/
+/* ===================================================================================
+ * ================================ MAIN FUNCTIONS  ==================================
+ * =================================================================================== */
 
 cache_t* new_cache() {
     return (cache_t*)Calloc(1, sizeof(cache_t));
@@ -30,8 +34,7 @@ node_t *cache_get(cache_t *cache,data_t key) {
     return NULL;
 }
 
-int cache_add(cache_t *cache,data_t key, data_t value,size_t value_len) {
-
+int cache_add(cache_t *cache,data_t key, data_t value,ssize_t value_len) {
     if (cache == NULL) return -1;
     if (value_len > MAX_CACHE_SIZE) return 0;
     while (cache->size + value_len > MAX_CACHE_SIZE) { // 캐시 최대 사이즈 초과시 기존 캐쉬 삭제
@@ -50,8 +53,11 @@ int cache_add(cache_t *cache,data_t key, data_t value,size_t value_len) {
 
 }
 
-/* sub functions */
+/* ===================================================================================
+ * ================================== SUB FUNCTIONS  =================================
+ * =================================================================================== */
 
+/* 노드를 연결리스트에서 제거*/
 static void _cache_pop(cache_t *cache,node_t *node) {
     if (node == NULL) {
         return;
@@ -73,6 +79,7 @@ static void _cache_pop(cache_t *cache,node_t *node) {
     return;
 }
 
+/* 노드를 front에 삽입*/
 static void _cache_node_insert(cache_t *cache,node_t *node) {
     if (node == NULL) return;
     node_t *front = cache->front;
@@ -86,12 +93,14 @@ static void _cache_node_insert(cache_t *cache,node_t *node) {
     }
 }
 
+/* 노드를 front로 이동*/
 static void _cache_move_front(cache_t *cache,node_t *node) {
     if (node == NULL || node == cache->front) return;
     _cache_pop(cache,node);
     _cache_node_insert(cache,node);
 }
 
+/* 노드 메모리 반환*/
 static void _node_delete(node_t *node) {
     free(node->key);
     free(node->value);
