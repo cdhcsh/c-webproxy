@@ -57,7 +57,9 @@ int main(int argc, char **argv) {
     close(connfdp);
   #elif CONCURRENCY == 1
     /* 스레드 생성하여 클라이언트 요청 처리 */
-    Pthread_create(&tid, NULL, thread, (void*)connfdp);
+      int *p = (int *) Malloc(sizeof(int));
+      *p = connfdp;
+    Pthread_create(&tid, NULL, thread, p);
   #endif
   }
   return 0;
@@ -65,9 +67,9 @@ int main(int argc, char **argv) {
 
 #if CONCURRENCY == 1
 void *thread (void *vargp) {
-  int connfd = (int)vargp;
+  int connfd = *(int*)vargp;
   Pthread_detach(pthread_self()); // 스레드 분리
-  // Free(vargp);                    // 동적 할당된 메모리 해제
+   Free(vargp);                    // 동적 할당된 메모리 해제
   doit(connfd);                   // 클라이언트 요청 처리 함수 호출
   Close(connfd);                  // 클라이언트 소켓 닫기
   return NULL;
