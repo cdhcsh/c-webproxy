@@ -208,12 +208,14 @@ void build_server_request_hdrs(const char *method, const char *host,
 void response_to_client(int clientfd, const char *host, const char *port, const char *hdrs) {
     char response[MAX_OBJECT_SIZE];
     ssize_t len;
+    pthread_mutex_lock(&cache_mutax);
     if ((len = get_response_from_server(host, port, hdrs, response)) > 0) {
         Rio_writen(clientfd, response, len);
     } else {
         print_log("Request send failed\n", "");
         response_error(clientfd, "GET", "502", "Bad Gateway", "Bad Gateway");
     }
+    pthread_mutex_unlock(&cache_mutax);
 }
 
 /* 최종 서버 결과 반환*/
@@ -221,10 +223,8 @@ ssize_t get_response_from_server(const char *host, const char *port, const char 
     node_t *node;
     char *cache_key, *cache_value;
     ssize_t len;
-    pthread_mutex_lock(&cache_mutax);
     node = cache_get(cache, hdrs);
-    pthread_mutex_unlock(&cache_mutax);
-    if (node > 0) { // 캐싱
+    if (node != NULL) { // 캐싱
         memcpy(response, node->value, node->value_len);
         return node->value_len;
     } else {
@@ -238,9 +238,7 @@ ssize_t get_response_from_server(const char *host, const char *port, const char 
         memcpy(cache_key, hdrs, MAXLINE);
         cache_value = (char *) malloc(len);
         memcpy(cache_value, response, len);
-        pthread_mutex_lock(&cache_mutax);
         cache_add(cache, cache_key, cache_value, len); // 캐쉬 저장
-        pthread_mutex_unlock(&cache_mutax);
 
         return len;
     }
