@@ -216,7 +216,7 @@ void response_client(int clientfd, const char *host, const char *port, const cha
     ssize_t len;
 
 #ifdef _CACHE_
-    len = request_to_server_cached(host, port, hdrs, response);
+    len = request_to_server_cached(host, port, hdrs, response); // 최종 서버에게 요청 및 결과를 buf 저장 (캐시 사용)
 #else
     len = request_to_server(host, port, hdrs, response); // 최종 서버에게 요청 및 결과를 buf 저장
 #endif
@@ -236,7 +236,7 @@ ssize_t request_to_server_cached(const char *host, const char *port, const char 
     char *cache_key, *cache_value;
     ssize_t len;
     pthread_mutex_lock(&cache_mutax);
-    node = cache_get(cache, hdrs);
+    node = cache_get(cache, hdrs); // 캐시 조회
     pthread_mutex_unlock(&cache_mutax);
     if (node != NULL) { // 캐싱
         memcpy(response, node->value, node->value_len);
@@ -253,7 +253,7 @@ ssize_t request_to_server_cached(const char *host, const char *port, const char 
         cache_value = (char *) malloc(len);
         memcpy(cache_value, response, len);
         pthread_mutex_lock(&cache_mutax);
-        cache_add(cache, cache_key, cache_value, len); // 캐쉬 저장
+        cache_add(cache, cache_key, cache_value, len); // 캐시 저장
         pthread_mutex_unlock(&cache_mutax);
 
         return len;
